@@ -40,7 +40,7 @@ mark{background:#fff3bf;padding:0 .1em;border-radius:.2em}
 <body>
 <header class="header">
   <div class="brand">Teplostil · Заказ</div>
-  <div class="cart" onclick="openCart()">
+  <div class="cart" onclick="window.open('cart.html','_blank')">
     <svg width="26" height="26" viewBox="0 0 24 24" fill="#0f172a"><path d="M7 4h-2l-1 2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.11.89 2 2 2h10v-2h-9.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h5.72c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1h-14.31l-.94-2zm-1 16c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
     <div id="cart-badge" class="badge">0</div>
   </div>
@@ -48,211 +48,124 @@ mark{background:#fff3bf;padding:0 .1em;border-radius:.2em}
 
 <main class="container">
   <div class="search-wrap">
-    <input id="q" type="search" placeholder="Начните вводить товар или артикул…" autocomplete="off" autofocus oninput="search()"/>
+    <input id="q" type="search" placeholder="Начните вводить товар (только из Список1) …" autocomplete="off" autofocus />
   </div>
-  <div class="help">Поиск понимает «труба», «перт/PERT», «эво/EVOH», «м/п» и др. Пример: <b>труба перт эвон 16</b></div>
+  <div class="help">Поиск только по названиям из «Список1» · все слова запроса должны встречаться</div>
   <div class="search-results">
     <div id="dropdown" class="dropdown hidden"></div>
   </div>
 
   <div class="admin">
-    <label for="csv" class="pill">📤 Загрузить CSV с фото (Артикул;image_small;image_large)</label>
-    <input id="csv" type="file" accept=".csv" />
-    <label for="pricecsv" class="pill">💰 Загрузить цены/остатки (Артикул;Цена;Остаток)</label>
-    <input id="pricecsv" type="file" accept=".csv" />
     <button class="pill" onclick="exportCartXLSX()">📥 Excel</button>
     <button class="pill" onclick="exportCartMXL()">📥 MXL</button>
     <a class="pill link" href="cart.html" target="_blank">🧺 Открыть корзину</a>
   </div>
 
-  <div class="footer">Работает офлайн · Данные корзины в браузере · CSV открывается в Excel без «кракозябр»</div>
+  <div class="footer">Работает офлайн · Данные корзины хранятся в браузере</div>
 </main>
 
 <div id="toast" class="toast"></div>
-
-<script>
-// ===== Shared state & helpers =====
-const DB_URL = 'data/products.json'; // (Артикул, Наименование, image_small, image_large, Цена, Остаток)
-let DB = [];
-const CART_KEY = 'cart_v1';
-
-function toast(msg){
-  const t=document.getElementById('toast');
-  if(!t) return; t.textContent=msg; t.style.display='block';
-  setTimeout(()=>t.style.display='none',1800);
-}
-
+<script>const DB_URL = 'data/products.json'; let DB = []; const CART_KEY = 'cart_v1';
+function toast(msg){const t=document.getElementById('toast'); if(!t) return; t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',1800);}
 function loadCart(){ try{ return JSON.parse(localStorage.getItem(CART_KEY)||'[]'); } catch(_){ return []; } }
 function saveCart(c){ localStorage.setItem(CART_KEY, JSON.stringify(c)); updateBadge(); }
-function updateBadge(){
-  const c = loadCart(); const cnt = c.reduce((s,i)=>s+(i.qty||0),0);
-  const el = document.getElementById('cart-badge'); if(el) el.textContent = String(cnt);
-}
-
-function addToCart(item){
-  const c = loadCart();
-  const idx = c.findIndex(x=>x.art===item.art);
-  if(idx>=0) c[idx].qty += 1;
-  else c.push({art:item.art, name:item.name, img:item.img||'', qty:1, price:item.price||0});
-  saveCart(c); toast('Добавлено в корзину');
-}
+function updateBadge(){ const c = loadCart(); const cnt = c.reduce((s,i)=>s+(i.qty||0),0); const el = document.getElementById('cart-badge'); if(el) el.textContent = String(cnt); }
+function addToCart(item){ const c = loadCart(); const idx = c.findIndex(x=>x.art===item.art); if(idx>=0) c[idx].qty += 1; else c.push({art:item.art, name:item.name, img:item.img||'', qty:1, price:item.price||0}); saveCart(c); toast('Добавлено в корзину'); }
 function removeFromCart(art){ const c = loadCart().filter(x=>x.art!==art); saveCart(c); }
-function setQty(art, qty){
-  qty = Math.max(0, parseInt(qty||0,10)); const c = loadCart();
-  for(const it of c){ if(it.art===art) it.qty = qty; }
-  saveCart(c.filter(x=>x.qty>0));
-}
+function setQty(art, qty){ qty = Math.max(0, parseInt(qty||0,10)); const c = loadCart(); for(const it of c){ if(it.art===art) it.qty = qty; } saveCart(c.filter(x=>x.qty>0)); }
 function imgOrPlaceholder(url){ return (url && url.length>3) ? url : 'assets/ph.png'; }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]) )}
-
-// ===== CSV (images + price) =====
-function parseCSV(text){
-  const lines = text.split(/\r?\n/).filter(Boolean); if(!lines.length) return [];
-  const headers = lines[0].split(';').map(h=>h.trim());
-  return lines.slice(1).map(line=>{
-    const cols = line.split(';'); const obj = {}; headers.forEach((h,i)=>obj[h]=(cols[i]||'').trim());
-    return obj;
-  });
-}
-
-// ===== Export: Excel-friendly CSV (fix gibberish) =====
+// CSV with BOM (Excel-friendly) + semicolon delimiter
 function exportCartXLSX(){
   const c = loadCart();
-  const rows = [['Артикул','Наименование','Количество','Цена','Сумма'],
-    ...c.map(i=>[i.art, i.name, i.qty, i.price||'', (i.qty||0)*(i.price||0)])
-  ];
-  const sep = ';';
-  const lines = rows.map(r=>r.map(v=>{
-    const s = String(v).replace(/"/g,'""');
-    return `"${s}"`;
-  }).join(sep));
-  const csvContent = '\ufeff' + 'sep=;\n' + lines.join('\n');
-  const blob = new Blob([csvContent], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'order.csv';
-  a.click();
+  const rows = [['Артикул','Наименование','Количество','Цена','Сумма']].concat(
+    c.map(i=>[i.art, i.name, i.qty, i.price||'', (i.qty||0)*(i.price||0)])
+  );
+  const bom = '\ufeff'; // UTF-8 BOM for Excel
+  const csv = rows.map(r=>r.map(v=>String(v).replace(/"/g,'""')).join(';')).join('\n');
+  const blob = new Blob([bom + csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'order.csv'; a.click();
 }
-
-// ===== Export: XML (.mxl placeholder) =====
 function exportCartMXL(){
-  const c = loadCart();
-  const esc = s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const c = loadCart(); const esc = s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const xml = ['<?xml version="1.0" encoding="UTF-8"?>','<order>']
     .concat(c.map(i=>`<item><art>${esc(i.art)}</art><name>${esc(i.name)}</name><qty>${i.qty}</qty><price>${i.price||''}</price></item>`))
     .concat(['</order>']).join('\n');
   const blob = new Blob([xml], {type:'application/xml;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'order.mxl';
-  a.click();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'order.mxl'; a.click();
 }
-
-// ===== Load DB (with local enrich) =====
+// Data loading + local enrich
+function parseCSV(text){ const lines = text.split(/\r?\n/).filter(Boolean); if(!lines.length) return []; const headers = lines[0].split(';').map(h=>h.trim()); return lines.slice(1).map(line=>{ const cols = line.split(';'); const obj = {}; headers.forEach((h,i)=>obj[h]=(cols[i]||'').trim()); return obj; }); }
 async function loadDB(){
   if(DB.length) return DB;
-  let arr = [];
   try{
     const res = await fetch(DB_URL, {cache:'no-store'});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    arr = await res.json();
+    const arr = await res.json();
+    DB = arr.map(p=>({
+      art: String(p['Артикул']||'').trim(),
+      name: String(p['Наименование']||'').trim(),
+      img: (p['image_small']||p['image_large']||'').trim(),
+      imgLarge: (p['image_large']||p['image_small']||'').trim(),
+      price: Number(p['Цена']||0)||0,
+      stock: Number(p['Остаток']||p['Запас']||0)||0,
+    }));
   }catch(e){
-    console.error('Ошибка загрузки products.json', e);
-    toast('Ошибка загрузки базы. Проверьте data/products.json');
-    return [];
+    console.error('Не удалось загрузить data/products.json', e);
+    DB = [];
   }
-  DB = arr.map(p=>({
-    art: String(p['Артикул']||'').trim(),
-    name: String(p['Наименование']||'').trim(),
-    img: (p['image_small']||p['image_large']||'').trim(),
-    imgLarge: (p['image_large']||p['image_small']||'').trim(),
-    price: Number((p['Цена']||'').toString().replace(',','.'))||0,
-    stock: Number((p['Остаток']||p['Запас']||'').toString().replace(',','.'))||0,
-  }));
-
+  // images enrich
   const imagesCSV = localStorage.getItem('images_map_csv');
-  if(imagesCSV){
-    const map = parseCSV(imagesCSV);
-    for(const row of map){
-      const art = (row['Артикул']||'').trim();
-      const it = DB.find(x=>x.art===art);
-      if(it){ if(row['image_small']) it.img = row['image_small']; if(row['image_large']) it.imgLarge = row['image_large']; }
-    }
-  }
+  if(imagesCSV){ const map = parseCSV(imagesCSV); for(const row of map){ const art = (row['Артикул']||'').trim(); const it = DB.find(x=>x.art===art); if(it){ if(row['image_small']) it.img = row['image_small']; if(row['image_large']) it.imgLarge = row['image_large']; } } }
+  // price enrich
   const priceCSV = localStorage.getItem('price_map_csv');
-  if(priceCSV){
-    const map = parseCSV(priceCSV);
-    for(const row of map){
-      const art = (row['Артикул']||'').trim();
-      const it = DB.find(x=>x.art===art);
-      if(it){
-        if(row['Цена']) it.price = Number(row['Цена'].replace(',','.'))||it.price;
-        if(row['Остаток']) it.stock = Number(row['Остаток'].replace(',','.'))||it.stock;
-      }
-    }
-  }
+  if(priceCSV){ const map = parseCSV(priceCSV); for(const row of map){ const art = (row['Артикул']||'').trim(); const it = DB.find(x=>x.art===art); if(it){ if(row['Цена']) it.price = Number(row['Цена'])||it.price; if(row['Остаток']) it.stock = Number(row['Остаток'])||it.stock; } } }
   return DB;
 }
-
-// ===== Search helpers (robust) =====
+// Search helpers
 const syn = {
-  "труба":["труба","трубка","pipe"],
-  "перт":["pert","pe-rt","pe rt","pe_rt","pe rt ii","pert-ii"],
-  "эво":["evoh","evo","евох","эвоx","evon","эвоh"],
+  "труба":["труб","трубопровод","pipe"],
+  "перт":["pert","pe-rt","pe rt","pe_rt","pe•rt","pe rt"],
+  "эво":["evoh","evo","евох","эвоx","эвах"],
   "эвон":["evoh","evo"],
   "евох":["evoh"],
   "пекс":["pex","p-ex","p ex","p_ex"],
-  "мп":["металлопласт","металлопластик","м/п","mp","metal-plast","metalplast","металлопл"],
   "нерж":["нержав","нержавейка","stainless","inox"],
-  "внвн":["вн-вн","внутренняя","внутр-внутр"],
-  "нарвн":["нар-вн","наружная-внутренняя"],
-  "вннар":["вн-нар","внутренняя-наружная"],
-  "кг":["kg","килограмм"],
+  "мп":["металлопласт","металлопластик","м/п","mp","metal-plast"],
+  "внвн":["вн-вн","внутр-внутр","внутренняя"],
+  "нарвн":["нар-вн","наруж-внутр","наружная-внутренняя"],
+  "вннар":["вн-нар","внутр-наруж","внутренняя-наружная"],
   "мм":["mm","миллиметр","миллиметра","миллиметров"],
-  "dn":["ду","диаметр"]
+  "dn":["ду","диаметр"],
+  "оц":["оцинк","оцинкованный","galvanized"]
 };
-
-function normalize(s){
-  return String(s||'')
-    .toLowerCase()
-    .replace(/ё/g,'е')
-    .replace(/[^a-z0-9а-я\-\/\.\s]/g,' ')
-    .replace(/\s+/g,' ')
-    .trim();
-}
+function normalize(s){ return String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^a-z0-9а-я\-\/\.\s]/g,' ').replace(/\s+/g,' ').trim(); }
 function tokenize(s){ return normalize(s).split(' ').filter(Boolean); }
-
-function stemRU(t){
-  const rules = ["ами","ями","ев","ов","ая","ые","ой","ий","ый","ая","ое","ее","ых","их","а","я","ы","и"];
-  for(const suf of rules){ if(t.endsWith(suf)) return t.slice(0, -suf.length); }
-  return t;
-}
-
 function expandToken(t){
-  const out = new Set([t, stemRU(t)]);
+  const out = new Set([t]);
   if(/^\d+([.,]\d+)?$/.test(t)) return Array.from(out);
   if(syn[t]) syn[t].forEach(x=>out.add(x));
+  if(t.endsWith('ы')||t.endsWith('и')) out.add(t.slice(0,-1));
+  if(t.endsWith('ая')||t.endsWith('ий')||t.endsWith('ый')) out.add(t.slice(0,-2));
   out.add(t.replace(/[-\/_]/g,' '));
   out.add(t.replace(/[-\/_]/g,''));
   return Array.from(out).filter(Boolean);
 }
-
 function buildIndexEntry(p){
-  const nameN = normalize(p.name);
-  const artN  = normalize(p.art);
-  const hay   = nameN + ' ' + artN;
+  const nameN = normalize(p.name); const artN = normalize(p.art); const hay = nameN + ' ' + artN;
   const words = new Set(tokenize(hay));
   return Object.assign({}, p, {_nameN:nameN,_artN:artN,_hay:hay,_words:words});
 }
-
 function scoreStrict(entry, qGroups){
   let ok = true, score = 0;
   for(const group of qGroups){
     let hit=false, local=0;
     for(const v of group){
       if(entry._hay.includes(v)){
-        hit=true;
-        local = Math.max(local,(entry._words.has(v)?3:1) + (entry._nameN.startsWith(v)?2:0) + (entry._artN.includes(v)?2:0) + (/^\d/.test(v)?2:0));
+        hit = true;
+        const word = entry._words.has(v) ? 3 : 1;
+        const starts = entry._nameN.startsWith(v) ? 2 : 0;
+        const art = entry._artN.includes(v) ? 2 : 0;
+        local = Math.max(local, word+starts+art);
       }
     }
     if(!hit){ ok=false; break; }
@@ -260,22 +173,15 @@ function scoreStrict(entry, qGroups){
   }
   return ok ? score + qGroups.length : -1;
 }
-
 function scoreAny(entry, qGroups){
-  let score = 0, hits=0;
+  let score = 0, hits = 0;
   for(const group of qGroups){
-    let local=0, hit=false;
     for(const v of group){
-      if(entry._hay.includes(v)){
-        hit=true;
-        local = Math.max(local,(entry._words.has(v)?3:1) + (entry._nameN.startsWith(v)?2:0) + (entry._artN.includes(v)?2:0));
-      }
+      if(entry._hay.includes(v)){ hits++; score += entry._words.has(v)?2:1; break; }
     }
-    if(hit){ hits++; score += local; }
   }
   return hits>0 ? score + hits : -1;
 }
-
 function highlight(text, qGroups){
   let out = text;
   for(const group of qGroups){
@@ -286,72 +192,56 @@ function highlight(text, qGroups){
   }
   return out;
 }
-
 function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; }
-
-let DROPDOWN; let DBIDX = [];
-async function initDB(){ const db = await loadDB(); DBIDX = db.map(buildIndexEntry); }
-
-const doSearch = debounce(async function(){
-  const qraw = document.getElementById('q').value;
-  DROPDOWN = DROPDOWN || document.getElementById('dropdown');
-  if(!qraw.trim()){ DROPDOWN.classList.add('hidden'); DROPDOWN.innerHTML=''; return; }
-
-  if(!DBIDX.length) await initDB();
-  if(!DBIDX.length){ DROPDOWN.innerHTML = '<div class="item"><div class="meta"><div class="title">База не загружена</div><div class="sku">Проверьте data/products.json</div></div></div>'; DROPDOWN.classList.remove('hidden'); return; }
-
-  const qTokens = tokenize(qraw);
-  const qGroups = qTokens.map(expandToken);
-
-  let scored = [];
-  if(qGroups.length === 1){
-    for(const e of DBIDX){ const s = scoreAny(e, qGroups); if(s>=0) scored.push([s,e]); }
-  } else {
-    for(const e of DBIDX){ const s = scoreStrict(e, qGroups); if(s>=0) scored.push([s,e]); }
-    if(scored.length < 10){
-      scored = [];
-      for(const e of DBIDX){ const s = scoreAny(e, qGroups); if(s>=0) scored.push([s,e]); }
+function norm(s){
+  return String(s||'')
+    .toLowerCase()
+    .replace(/ё/g,'е')
+    .replace(/[.,/\\()_\-+"]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function tokenize(q){
+  let t = norm(q).split(' ').filter(Boolean);
+  return t.map(x=>{
+    if(x.startsWith('эво')) return 'evoh';
+    if(x.startsWith('перт')) return 'pert';
+    if(x==='пекс' || x==='pex') return 'pex';
+    return x;
+  });
+}
+function containsAllTokens(hay, tokens){
+  for(const t of tokens){ if(!hay.includes(t)) return false; }
+  return true;
+}
+function highlight(text, tokens){
+  let s = text;
+  for(const t of tokens){
+    if(!t) continue;
+    try{
+      const re = new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      s = s.replace(re,'<mark>$1</mark>');
+    }catch(_){}
+  }
+  return s;
+}
+async function searchStrict(){
+  const q = document.getElementById('q').value;
+  const tokens = tokenize(q);
+  const box = document.getElementById('dropdown');
+  if(!tokens.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
+  const db = await loadDB();
+  const results = [];
+  for(const p of db){
+    const hay = norm(p.name) + ' ' + norm(p.art);
+    if(containsAllTokens(hay, tokens)){
+      const pos = tokens.reduce((s,t)=> s + Math.max(0, hay.indexOf(t)), 0);
+      results.push({p, pos});
     }
   }
-
-  scored.sort((a,b)=>b[0]-a[0]);
-  const top = scored.slice(0, 150).map(x=>x[1]);
-  renderDropdown(top, qGroups);
-}, 120);
-
-function search(){ doSearch(); }
-
-function renderDropdown(items, qGroups){
-  const el = DROPDOWN;
-  if(!items.length){
-    el.innerHTML = `<div class="item"><div class="meta"><div class="title">Ничего не найдено</div><div class="sku">Попробуйте: «труба pex 16», «труба перт 20», «м/п 16»</div></div></div>`;
-    el.classList.remove('hidden'); return;
-  }
-  el.innerHTML = items.map(p=>`
-    <div class="item">
-      <img class="thumb" src="${imgOrPlaceholder(p.img)}" onerror="this.src='assets/ph.png'"/>
-      <div class="meta">
-        <div class="title">${highlight(escapeHtml(p.name), qGroups)}</div>
-        <div class="sku">(арт. ${highlight(escapeHtml(p.art), qGroups)}) ${p.price? ' · '+String(p.price): ''}</div>
-      </div>
-      <div class="actions">
-        <button class="btn" onclick='addToCart(${JSON.stringify({art:""+p.art,name:""+p.name,img:p.img,price:p.price}).replace(/"/g,'&quot;')});event.stopPropagation()'>Добавить</button>
-        ${p.imgLarge ? `<a class="btn" href="${p.imgLarge}" target="_blank" title="Фото в полном размере">🔍</a>` : ''}
-      </div>
-    </div>
-  `).join('');
-  el.classList.remove('hidden');
-}
-
-function openCart(){ window.open('cart.html','_blank'); }
-
-document.addEventListener('DOMContentLoaded', () => {
-  const priceInput = document.getElementById('pricecsv'); if(priceInput){ priceInput.addEventListener('change', async (e)=>{ const f = e.target.files[0]; if(!f) return; const text = await f.text(); localStorage.setItem('price_map_csv', text); DB = []; DBIDX = []; toast('Цены/остатки применены ✔'); search(); }); }
-  const imgInput = document.getElementById('csv'); if(imgInput){ imgInput.addEventListener('change', async (e)=>{ const f = e.target.files[0]; if(!f) return; const text = await f.text(); localStorage.setItem('images_map_csv', text); DB = []; DBIDX = []; toast('Фото-карта применена ✔'); search(); }); }
-  updateBadge();
-});
-
-</script>
+  results.sort((a,b)=> a.pos - b.pos);
+  renderDropdown(results.slice(0,50).map(r=>r.p), tokens);
+}</script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
