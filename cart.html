@@ -16,14 +16,13 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sa
 .search-wrap{display:flex;align-items:center;gap:8px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:999px;padding:8px 16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
 .search-wrap input{flex:1;background:transparent;border:0;outline:0;color:#0f172a;font-size:20px;padding:8px}
 .search-results{position:relative;margin-top:14px}
-.dropdown{position:absolute;left:0;right:0;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;max-height:480px;overflow-y:auto;box-shadow:0 8px 24px rgba(15,23,42,.08)}
+.dropdown{position:absolute;left:0;right:0;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;max-height:520px;overflow-y:auto;box-shadow:0 8px 24px rgba(15,23,42,.08)}
 .item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid #f1f5f9}
 .item:last-child{border-bottom:0}
 .thumb{width:48px;height:48px;border-radius:8px;background:#f1f5f9;object-fit:cover;flex:0 0 48px;border:1px solid #e5e7eb}
 .meta{display:flex;flex-direction:column;gap:2px;min-width:0}
 .title{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#0f172a}
 .sku{font-size:13px;color:#64748b}
-.price{font-size:13px;color:#0f172a}
 .item .actions{margin-left:auto;display:flex;gap:8px}
 .btn{background:#f8fafc;border:1px solid #e5e7eb;color:#0f172a;border-radius:10px;padding:6px 10px;font-size:14px;cursor:pointer}
 .btn:hover{background:#eef2f7}
@@ -35,10 +34,8 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sa
 .pill{border:1px dashed #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer;color:#0f172a;background:#ffffff}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;border:1px solid #0f172a;padding:10px 14px;border-radius:10px;display:none;z-index:50}
 .hidden{display:none}
-mark{background:#fde68a}
-.table{width:100%;border-collapse:collapse;margin-top:8px}
-.table th,.table td{border-bottom:1px solid #e5e7eb;padding:8px 6px;text-align:left;font-size:14px}
-.sum{display:flex;justify-content:flex-end;gap:24px;margin-top:12px;font-weight:600}</style>
+mark{background:#fff3bf;padding:0 .1em;border-radius:.2em}
+</style>
 </head>
 <body>
 <header class="header">
@@ -47,180 +44,62 @@ mark{background:#fde68a}
 </header>
 <main class="container">
   <div id="cart-list"></div>
-  <div class="sum">Итого: <span id="total">0</span> с</div>
   <div class="admin" style="margin-top:24px">
-    <button class="pill" onclick="exportCartCSV()">📥 Excel (CSV)</button>
+    <button class="pill" onclick="exportCartXLSX()">📥 Excel</button>
     <button class="pill" onclick="exportCartMXL()">📥 MXL</button>
     <button class="pill" onclick="clearCart()">🧹 Очистить</button>
   </div>
 </main>
 <div id="toast" class="toast"></div>
-<script>const DB_URL = 'data/products.json';
-let DB = [];
-const CART_KEY = 'cart_v2';
-const placeholder = 'assets/ph.png';
-
-function toast(msg){
-  const t=document.getElementById('toast');
-  if(!t) return;
-  t.textContent=msg; t.style.display='block';
-  setTimeout(()=>t.style.display='none',1800);
-}
-
-function loadCart(){
-  try{ return JSON.parse(localStorage.getItem(CART_KEY)||'[]'); }
-  catch(_){ return []; }
-}
+<script>
+const DB_URL = 'data/products.json'; let DB = []; const CART_KEY = 'cart_v1';
+function toast(msg){const t=document.getElementById('toast'); if(!t) return; t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',1800);}
+function loadCart(){ try{ return JSON.parse(localStorage.getItem(CART_KEY)||'[]'); } catch(_){ return []; } }
 function saveCart(c){ localStorage.setItem(CART_KEY, JSON.stringify(c)); updateBadge(); }
-
-function updateBadge(){
-  const c = loadCart();
-  const cnt = c.reduce((s,i)=>s+(i.qty||0),0);
-  const el = document.getElementById('cart-badge');
-  if(el) el.textContent = String(cnt);
-}
-
-function addToCart(item){
-  const c = loadCart();
-  const idx = c.findIndex(x=>x.art===item.art);
-  if(idx>=0) c[idx].qty += 1;
-  else c.push({art:item.art, name:item.name, img:item.img||'', price:item.price||0, qty:1});
-  saveCart(c); toast('Добавлено в корзину');
-}
-
-function removeFromCart(art){ saveCart(loadCart().filter(x=>x.art!==art)); }
-
-function setQty(art, qty){
-  qty = Math.max(0, parseInt(qty||0,10));
-  const c = loadCart();
-  for(const it of c){ if(it.art===art) it.qty = qty; }
-  saveCart(c.filter(x=>x.qty>0));
-}
-
-function money(n){
-  const v = Number(n||0);
-  if(!isFinite(v)) return '';
-  return v.toLocaleString('ru-RU');
-}
-
-function parseCSV(text){
-  const lines = text.split(/\r?\n/).filter(Boolean);
-  if(!lines.length) return [];
-  const headers = lines[0].split(';').map(h=>h.trim());
-  return lines.slice(1).map(line=>{
-    const cols = line.split(';');
-    const obj = {};
-    headers.forEach((h,i)=>obj[h]= (cols[i]||'').trim());
-    return obj;
-  });
-}
-
-function applyPriceMap(DB){
-  const csv = localStorage.getItem('price_map_csv');
-  if(!csv) return;
-  const rows = parseCSV(csv);
-  const map = new Map();
-  rows.forEach(r=> map.set((r['Артикул']||'').trim(), r));
-  DB.forEach(it=>{
-    const r = map.get(it.art);
-    if(r){
-      const p = Number((r['Цена']||'').replace(/\s+/g,''));
-      const st= Number((r['Остаток']||'').replace(/\s+/g,''));
-      if(!Number.isNaN(p)) it.price = p;
-      if(!Number.isNaN(st)) it.stock = st;
-    }
-  });
-}
-
-function applyImageMap(DB){
-  const csv = localStorage.getItem('images_map_csv');
-  if(!csv) return;
-  const rows = parseCSV(csv);
-  const map = new Map();
-  rows.forEach(r=> map.set((r['Артикул']||'').trim(), r));
-  DB.forEach(it=>{
-    const r = map.get(it.art);
-    if(r){
-      if(r['image_small']) it.img = r['image_small'];
-      if(r['image_large']) it.imgLarge = r['image_large'];
-    }
-  });
-}
-
-async function loadDB(){
-  if(DB.length) return DB;
-  const res = await fetch(DB_URL, {cache:'no-store'});
-  const arr = await res.json();
-  DB = arr.map(p=>({
-    art: String(p['Артикул']||'').trim(),
-    name: String(p['Наименование']||'').trim(),
-    img: (p['image_small']||p['image_large']||'').trim(),
-    imgLarge: (p['image_large']||p['image_small']||'').trim(),
-    price: Number(p['Цена']||0)||0,
-    stock: Number(p['Остаток']||0)||0,
-  }));
-  applyImageMap(DB);
-  applyPriceMap(DB);
-  return DB;
-}
-
+function updateBadge(){ const c = loadCart(); const cnt = c.reduce((s,i)=>s+(i.qty||0),0); const el = document.getElementById('cart-badge'); if(el) el.textContent = String(cnt); }
+function addToCart(item){ const c = loadCart(); const idx = c.findIndex(x=>x.art===item.art); if(idx>=0) c[idx].qty += 1; else c.push({art:item.art, name:item.name, img:item.img||'', qty:1, price:item.price||0}); saveCart(c); toast('Добавлено в корзину'); }
+function removeFromCart(art){ const c = loadCart().filter(x=>x.art!==art); saveCart(c); }
+function setQty(art, qty){ qty = Math.max(0, parseInt(qty||0,10)); const c = loadCart(); for(const it of c){ if(it.art===art) it.qty = qty; } saveCart(c.filter(x=>x.qty>0)); }
 function imgOrPlaceholder(url){ return (url && url.length>3) ? url : 'assets/ph.png'; }
-function renderCart(){
+function escapeHtml(s){return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]) )}
+function parseCSV(text){ const lines = text.split(/\r?\n/).filter(Boolean); if(!lines.length) return []; const headers = lines[0].split(';').map(h=>h.trim()); return lines.slice(1).map(line=>{ const cols = line.split(';'); const obj = {}; headers.forEach((h,i)=>obj[h]=(cols[i]||'').trim()); return obj; }); }
+async function loadDB(){ if(DB.length) return DB; const res = await fetch(DB_URL, {cache:'no-store'}); const arr = await res.json(); DB = arr.map(p=>({ art: String(p['Артикул']||'').trim(), name: String(p['Наименование']||'').trim(), img: (p['image_small']||p['image_large']||'').trim(), imgLarge: (p['image_large']||p['image_small']||'').trim(), price: Number(p['Цена']||0)||0, stock: Number(p['Остаток']||p['Запас']||0)||0, })); const imagesCSV = localStorage.getItem('images_map_csv'); if(imagesCSV){ const map = parseCSV(imagesCSV); for(const row of map){ const art = (row['Артикул']||'').trim(); const it = DB.find(x=>x.art===art); if(it){ if(row['image_small']) it.img = row['image_small']; if(row['image_large']) it.imgLarge = row['image_large']; } } } const priceCSV = localStorage.getItem('price_map_csv'); if(priceCSV){ const map = parseCSV(priceCSV); for(const row of map){ const art = (row['Артикул']||'').trim(); const it = DB.find(x=>x.art===art); if(it){ if(row['Цена']) it.price = Number(row['Цена'])||it.price; if(row['Остаток']) it.stock = Number(row['Остаток'])||it.stock; } } } return DB; }
+const syn = {"перт":["pert","pe-rt","pe rt","pe_rt"],"эво":["evoh","evo","евох","эвоx","евох"],"эвон":["evoh","evo"],"евох":["evoh"],"пекс":["pex","p-ex","p ex","p_ex"],"нерж":["нержав","нержавейка","stainless"],"мп":["металлопласт","металлопластик","м/п","mp","metal-plast"],"внвн":["вн-вн","внутренняя"],"нарвн":["нар-вн","наружная-внутренняя"],"вннар":["вн-нар","внутренняя-наружная"],"кг":["kg","килограмм"],"мм":["mm","миллиметр","миллиметра","миллиметров"],"dn":["ду","диаметр"]};
+function normalize(s){return String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^a-z0-9а-я\-\/\.\s]/g,' ').replace(/\s+/g,' ').trim();}
+function tokenize(s){ return normalize(s).split(' ').filter(Boolean); }
+function expandToken(t){ const out = new Set([t]); if(/^\d+([.,]\d+)?$/.test(t)) return Array.from(out); if(syn[t]) syn[t].forEach(x=>out.add(x)); if(t.endsWith('ы')||t.endsWith('и')) out.add(t.slice(0,-1)); if(t.endsWith('ая')||t.endsWith('ий')||t.endsWith('ый')) out.add(t.slice(0,-2)); out.add(t.replace(/[-\/_]/g,' ')); out.add(t.replace(/[-\/_]/g,'')); return Array.from(out).filter(Boolean); }
+function buildIndexEntry(p){ const nameN = normalize(p.name); const artN  = normalize(p.art); const hay   = nameN + ' ' + artN; const words = new Set(tokenize(hay)); return Object.assign({}, p, {_nameN:nameN,_artN:artN,_hay:hay,_words:words}); }
+function scoreItem(entry, qGroups){ let ok = true, score = 0, starts=0, artHit=0, exact=0, digits=0; for(const group of qGroups){ let hit=false, localBest=0; for(const v of group){ if(entry._hay.includes(v)){ hit = true; localBest = Math.max(localBest,(entry._words.has(v) ? 3 : 1) + (entry._nameN.startsWith(v) ? 2 : 0) + (entry._artN.includes(v) ? 2 : 0) + (/^\d/.test(v) ? 2 : 0)); if(entry._nameN.startsWith(v)) starts++; if(entry._artN.includes(v)) artHit++; if(entry._words.has(v)) exact++; if(/^\d/.test(v)) digits++; } } if(!hit){ ok=false; break; } score += localBest; } if(!ok) return -1; score += qGroups.length; score += starts + artHit + exact + digits; return score; }
+function highlight(text, qGroups){ let out = text; for(const group of qGroups){ const best = group.slice().sort((a,b)=>b.length-a.length)[0]; if(!best) continue; const re = new RegExp(best.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi'); out = out.replace(re, m=>`<mark>${m}</mark>`); } return out; }
+function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; }
+
+function render(){
   const c = loadCart();
   const root = document.getElementById('cart-list');
-  if(!c.length){ 
-    root.innerHTML = '<div class="help">Корзина пуста</div>'; 
-    updateBadge(); 
-    document.getElementById('total').textContent = '0';
-    return; 
-  }
-  const rows = c.map(i=>`
-    <tr>
-      <td>${escapeHtml(i.name)}<div class="sku">(арт. ${escapeHtml(i.art)})</div></td>
-      <td>${i.price? money(i.price): ''}</td>
-      <td>
+  if(!c.length){ root.innerHTML = '<div class="help">Корзина пуста</div>'; updateBadge(); return; }
+  const total = c.reduce((s,i)=>s + (i.qty||0) * (i.price||0), 0);
+  root.innerHTML = c.map(i=>`
+    <div class="item">
+      <img class="thumb" src="${imgOrPlaceholder(i.img)}" onerror="this.src='assets/ph.png'"/>
+      <div class="meta">
+        <div class="title">${escapeHtml(i.name)}</div>
+        <div class="sku">(арт. ${escapeHtml(i.art)}) ${i.price? ' · '+String(i.price): ''}</div>
+      </div>
+      <div class="actions">
         <button class="btn" onclick="chg('${i.art}',-1)">–</button>
         <span class="btn">${i.qty}</span>
         <button class="btn" onclick="chg('${i.art}',+1)">+</button>
-      </td>
-      <td><button class="btn" onclick="delItem('${i.art}')">🗑</button></td>
-    </tr>
-  `).join('');
-  root.innerHTML = `
-    <table class="table">
-      <thead><tr><th>Товар</th><th>Цена</th><th>Кол-во</th><th></th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-  const total = c.reduce((s,i)=> s + (i.qty||0) * (Number(i.price)||0), 0);
-  document.getElementById('total').textContent = money(total);
+        <button class="btn" onclick="delItem('${i.art}')">🗑</button>
+      </div>
+    </div>
+  `).join('') + `<div class="item"><div class="meta"><div class="title"><b>Итого:</b> ${total}</div></div></div>`;
   updateBadge();
 }
-function chg(art, d){
-  const c = loadCart();
-  for(const it of c){ if(it.art===art){ it.qty = Math.max(0,(it.qty||0)+d); } }
-  saveCart(c.filter(x=>x.qty>0)); renderCart();
-}
-function delItem(art){ removeFromCart(art); renderCart(); }
-function clearCart(){ saveCart([]); renderCart(); toast('Корзина очищена'); }
-function exportCartCSV(){
-  const c = loadCart();
-  const rows = [['Артикул','Наименование','Цена','Количество','Сумма']]
-    .concat(c.map(i=>[i.art, i.name, i.price||'', i.qty||0, (i.qty||0)*(i.price||0)]));
-  const csv = rows.map(r=>r.join(';')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'order.csv'; a.click();
-}
-function exportCartMXL(){
-  const c = loadCart();
-  const esc = s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const xml = ['<?xml version="1.0" encoding="UTF-8"?>','<order>']
-    .concat(c.map(i=>`<item><art>${esc(i.art)}</art><name>${esc(i.name)}</name><price>${i.price||0}</price><qty>${i.qty||0}</qty></item>`))
-    .concat(['</order>']).join('\n');
-  const blob = new Blob([xml], {type:'application/xml;charset=utf-8'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'order.mxl'; a.click();
-}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-document.addEventListener('DOMContentLoaded', () => { updateBadge(); renderCart(); });</script>
+function chg(art, d){ const c = loadCart(); for(const it of c){ if(it.art===art) it.qty = Math.max(0,(it.qty||0)+d); } saveCart(c.filter(x=>x.qty>0)); render(); }
+function delItem(art){ removeFromCart(art); render(); }
+function clearCart(){ saveCart([]); render(); toast('Корзина очищена'); }
+document.addEventListener('DOMContentLoaded', function(){ updateBadge(); render(); });
+</script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
